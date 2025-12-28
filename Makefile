@@ -9,7 +9,7 @@ LDFLAGS = -m elf_i386 -T src/linker.ld
 OBJS = build/boot.o build/kernel.o build/idt.o build/idt_asm.o \
        build/isr.o build/pic.o build/keyboard.o build/timer.o \
        build/string.o build/memory.o build/command.o build/commands.o \
-       build/lineedit.o
+       build/lineedit.o build/vga_cursor.o
 
 all: build/kernel.bin argon.iso
 
@@ -62,6 +62,10 @@ build/commands.o: src/commands.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 build/lineedit.o: src/lineedit.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/vga_cursor.o: src/vga_cursor.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 

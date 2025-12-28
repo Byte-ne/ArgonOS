@@ -7,6 +7,7 @@
 #include "command.h"
 #include "string.h"
 #include "lineedit.h"
+#include "vga_cursor.h"
 
 static uint16_t* terminal_buffer;
 static uint32_t terminal_row;
@@ -14,14 +15,6 @@ static uint32_t terminal_column;
 static uint8_t terminal_color;
 
 extern void commands_register_all(void);
-
-static inline uint8_t vga_entry_color(enum vga_color fg, enum vga_color bg) {
-    return fg | bg << 4;
-}
-
-static inline uint16_t vga_entry(unsigned char uc, uint8_t color) {
-    return (uint16_t) uc | (uint16_t) color << 8;
-}
 
 void terminal_initialize(void) {
     terminal_row = 0;
@@ -35,15 +28,29 @@ void terminal_initialize(void) {
             terminal_buffer[index] = vga_entry(' ', terminal_color);
         }
     }
+    
+    vga_cursor_enable(14, 15);
 }
 
 void terminal_setcolor(uint8_t color) {
     terminal_color = color;
 }
 
+uint8_t terminal_get_color(void) {
+    return terminal_color;
+}
+
+uint32_t terminal_get_row(void) {
+    return terminal_row;
+}
+
 void terminal_putentryat(char c, uint8_t color, uint32_t x, uint32_t y) {
     const uint32_t index = y * VGA_WIDTH + x;
     terminal_buffer[index] = vga_entry(c, color);
+}
+
+void terminal_putchar_at(char c, uint8_t color, uint32_t x, uint32_t y) {
+    terminal_putentryat(c, color, x, y);
 }
 
 void terminal_scroll(void) {
@@ -63,6 +70,7 @@ void terminal_scroll(void) {
 void terminal_putchar(char c) {
     if (c == '\r') {
         terminal_column = 0;
+        vga_cursor_set_position(terminal_column, terminal_row);
         return;
     }
     
@@ -71,6 +79,7 @@ void terminal_putchar(char c) {
         if (++terminal_row == VGA_HEIGHT) {
             terminal_scroll();
         }
+        vga_cursor_set_position(terminal_column, terminal_row);
         return;
     }
     
@@ -78,6 +87,7 @@ void terminal_putchar(char c) {
         if (terminal_column > 0) {
             terminal_column--;
             terminal_putentryat(' ', terminal_color, terminal_column, terminal_row);
+            vga_cursor_set_position(terminal_column, terminal_row);
         }
         return;
     }
@@ -90,6 +100,8 @@ void terminal_putchar(char c) {
             terminal_scroll();
         }
     }
+    
+    vga_cursor_set_position(terminal_column, terminal_row);
 }
 
 void terminal_write(const char* data, uint32_t size) {
@@ -115,7 +127,7 @@ void kernel_main(void) {
     terminal_initialize();
     
     terminal_setcolor(vga_entry_color(VGA_WHITE, VGA_BLACK));
-    terminal_writestring("Argon OS [Version 0.2.3]\n");
+    terminal_writestring("Argon OS [Version 0.2.3 Final]\n");
     terminal_setcolor(vga_entry_color(VGA_LIGHT_GREY, VGA_BLACK));
     terminal_writestring("(c) Argon Corporation. All rights reserved.\n\n");
     
@@ -128,7 +140,9 @@ void kernel_main(void) {
     commands_register_all();
     
     terminal_setcolor(vga_entry_color(VGA_LIGHT_GREEN, VGA_BLACK));
-    terminal_writestring("Line editor enabled. Use arrow keys!\n");
+    terminal_writestring("Hardware cursor enabled! Smooth like PowerShell.\n");
+    terminal_setcolor(vga_entry_color(VGA_LIGHT_CYAN, VGA_BLACK));
+    terminal_writestring("Ctrl+C = Copy  |  Ctrl+V = Paste  |  Ctrl+L = Clear\n");
     terminal_setcolor(vga_entry_color(VGA_LIGHT_GREY, VGA_BLACK));
     terminal_writestring("Type 'help.commands' for available commands.\n\n");
     
@@ -141,18 +155,24 @@ void kernel_main(void) {
         }
         
         if (keyboard_has_key()) {
+            keyboard_state_t state = keyboard_get_state();
             char c = keyboard_getchar();
-            lineedit_handle_key(c);
             
-            if (lineedit_is_complete()) {
-                char* line = lineedit_get_line();
+            if (state.ctrl_pressed) {
+                lineedit_handle_ctrl_key(c);
+            } else {
+                lineedit_handle_key(c);
                 
-                if (strlen(line) > 0) {
-                    command_execute(line);
+                if (lineedit_is_complete()) {
+                    char* line = lineedit_get_line();
+                    
+                    if (strlen(line) > 0) {
+                        command_execute(line);
+                    }
+                    
+                    lineedit_reset();
+                    print_prompt();
                 }
-                
-                lineedit_reset();
-                print_prompt();
             }
         }
         
