@@ -1,6 +1,7 @@
 #include "lineedit.h"
 #include "string.h"
 #include "kernel.h"
+#include "vga_cursor.h"
 
 static char line_buffer[LINE_BUFFER_SIZE];
 static int cursor_pos = 0;
@@ -12,11 +13,14 @@ static int history_count = 0;
 static int history_index = -1;
 static char temp_buffer[LINE_BUFFER_SIZE];
 
+static char clipboard[CLIPBOARD_SIZE];
+
 static char prompt[64] = "C:\\Argon> ";
 static int prompt_len = 10;
 
 void lineedit_init(void) {
     memset(line_buffer, 0, LINE_BUFFER_SIZE);
+    memset(clipboard, 0, CLIPBOARD_SIZE);
     cursor_pos = 0;
     line_length = 0;
     is_complete = 0;
@@ -27,6 +31,10 @@ void lineedit_init(void) {
 void lineedit_set_prompt(const char* new_prompt) {
     strcpy(prompt, new_prompt);
     prompt_len = strlen(prompt);
+}
+
+int lineedit_get_cursor_column(void) {
+    return prompt_len + cursor_pos;
 }
 
 static void save_to_history(const char* line) {
@@ -47,6 +55,10 @@ static void save_to_history(const char* line) {
     }
 }
 
+static void update_cursor(void) {
+    vga_cursor_set_position(prompt_len + cursor_pos, terminal_get_row());
+}
+
 static void redraw_line(void) {
     terminal_putchar('\r');
     
@@ -65,6 +77,8 @@ static void redraw_line(void) {
         terminal_putchar('\b');
         current_pos--;
     }
+    
+    update_cursor();
 }
 
 static void handle_arrow_up(void) {
@@ -105,6 +119,7 @@ static void handle_arrow_left(void) {
     if (cursor_pos > 0) {
         cursor_pos--;
         terminal_putchar('\b');
+        update_cursor();
     }
 }
 
@@ -112,6 +127,7 @@ static void handle_arrow_right(void) {
     if (cursor_pos < line_length) {
         terminal_putchar(line_buffer[cursor_pos]);
         cursor_pos++;
+        update_cursor();
     }
 }
 
@@ -120,6 +136,7 @@ static void handle_home(void) {
         terminal_putchar('\b');
         cursor_pos--;
     }
+    update_cursor();
 }
 
 static void handle_end(void) {
@@ -127,6 +144,7 @@ static void handle_end(void) {
         terminal_putchar(line_buffer[cursor_pos]);
         cursor_pos++;
     }
+    update_cursor();
 }
 
 static void handle_delete(void) {
@@ -155,6 +173,49 @@ void lineedit_handle_special_key(uint8_t scancode) {
         handle_end();
     } else if (scancode == 0x53) {
         handle_delete();
+    }
+}
+
+void lineedit_handle_ctrl_key(char key) {
+    if (key == 'c') {
+        if (line_length > 0) {
+            strcpy(clipboard, line_buffer);
+            terminal_setcolor(vga_entry_color(VGA_LIGHT_GREEN, VGA_BLACK));
+            terminal_writestring(" [Copied]");
+            terminal_setcolor(vga_entry_color(VGA_WHITE, VGA_BLACK));
+            update_cursor();
+        }
+    } else if (key == 'v') {
+        if (strlen(clipboard) > 0) {
+            for (int i = 0; clipboard[i] != '\0' && line_length < LINE_BUFFER_SIZE - 1; i++) {
+                if (cursor_pos < line_length) {
+                    for (int j = line_length; j > cursor_pos; j--) {
+                        line_buffer[j] = line_buffer[j - 1];
+                    }
+                }
+                
+                line_buffer[cursor_pos] = clipboard[i];
+                cursor_pos++;
+                line_length++;
+            }
+            
+            line_buffer[line_length] = '\0';
+            redraw_line();
+        }
+    } else if (key == 'l') {
+        terminal_clear();
+        terminal_writestring(prompt);
+        terminal_writestring(line_buffer);
+        
+        int final_pos = prompt_len + cursor_pos;
+        int current_pos = prompt_len + line_length;
+        
+        while (current_pos > final_pos) {
+            terminal_putchar('\b');
+            current_pos--;
+        }
+        
+        update_cursor();
     }
 }
 
@@ -199,6 +260,7 @@ void lineedit_handle_key(char key) {
         
         if (cursor_pos == line_length) {
             terminal_putchar(key);
+            update_cursor();
         } else {
             redraw_line();
         }
