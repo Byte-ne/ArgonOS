@@ -9,7 +9,8 @@ LDFLAGS = -m elf_i386 -T src/linker.ld
 OBJS = build/boot.o build/kernel.o build/idt.o build/idt_asm.o \
        build/isr.o build/pic.o build/keyboard.o build/timer.o \
        build/string.o build/memory.o build/command.o build/commands.o \
-       build/lineedit.o build/vga_cursor.o
+       build/lineedit.o build/vga_cursor.o build/task.o build/scheduler.o \
+       build/task_switch.o build/demo_tasks.o
 
 all: build/kernel.bin argon.iso
 
@@ -66,6 +67,22 @@ build/lineedit.o: src/lineedit.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 build/vga_cursor.o: src/vga_cursor.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/task.o: src/task.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/scheduler.o: src/scheduler.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/task_switch.o: src/task_switch.asm
+	@mkdir -p build
+	$(AS) $(ASFLAGS) $< -o $@
+
+build/demo_tasks.o: src/demo_tasks.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 

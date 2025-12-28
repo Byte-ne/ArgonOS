@@ -8,6 +8,8 @@
 #include "string.h"
 #include "lineedit.h"
 #include "vga_cursor.h"
+#include "task.h"
+#include "scheduler.h"
 
 static uint16_t* terminal_buffer;
 static uint32_t terminal_row;
@@ -137,14 +139,16 @@ void kernel_main(void) {
     memory_init();
     command_init();
     lineedit_init();
+    task_init();
+    scheduler_init();
     commands_register_all();
     
     terminal_setcolor(vga_entry_color(VGA_LIGHT_GREEN, VGA_BLACK));
-    terminal_writestring("Hardware cursor enabled! Smooth like PowerShell.\n");
-    terminal_setcolor(vga_entry_color(VGA_LIGHT_CYAN, VGA_BLACK));
-    terminal_writestring("Ctrl+C = Copy  |  Ctrl+V = Paste  |  Ctrl+L = Clear\n");
+    terminal_writestring("Multitasking enabled! Try 'process.create counter'\n");
     terminal_setcolor(vga_entry_color(VGA_LIGHT_GREY, VGA_BLACK));
     terminal_writestring("Type 'help.commands' for available commands.\n\n");
+    
+    scheduler_start();
     
     print_prompt();
     
