@@ -251,157 +251,172 @@ void cmd_display_echo(parsed_command_t *cmd)
 void cmd_process_list(parsed_command_t *cmd)
 {
     (void)cmd;
+    terminal_writestring("Active Tasks:\n");
+    terminal_writestring("ID   Name                State\n");
+    terminal_writestring("---  ------------------  -------\n");
 
-    terminal_setcolor(vga_entry_color(VGA_WHITE, VGA_BLACK));
-    terminal_writestring("\n ID  Name              State       CPU Time\n");
-    terminal_writestring("---  ----------------  ----------  ---------\n");
-
-    for (int i = 0; i < MAX_TASKS; i++)
+    for (uint32_t i = 0; i < MAX_TASKS; i++)
     {
-        if (tasks[i].id != 0 && tasks[i].state != TASK_DEAD)
+        task_t *task = task_get_by_index(i);
+        if (task && task->id != 0 && task->state != TASK_DEAD)
         {
-            char buf[20];
+            char id_str[12];
+            itoa(task->id, id_str);
 
-            terminal_writestring(" ");
-            itoa(tasks[i].id, buf);
-            terminal_writestring(buf);
-            terminal_writestring("   ");
+            terminal_writestring(id_str);
+            terminal_writestring("    ");
+            terminal_writestring(task->name);
 
-            terminal_writestring(tasks[i].name);
-            for (int j = strlen(tasks[i].name); j < 18; j++)
+            // Pad name
+            uint32_t name_len = strlen(task->name);
+            for (uint32_t j = name_len; j < 20; j++)
             {
                 terminal_putchar(' ');
             }
 
-            const char *state_str = "UNKNOWN";
-            if (tasks[i].state == TASK_READY)
-                state_str = "READY";
-            else if (tasks[i].state == TASK_RUNNING)
-                state_str = "RUNNING";
-            else if (tasks[i].state == TASK_BLOCKED)
-                state_str = "BLOCKED";
-
-            terminal_writestring(state_str);
-            for (int j = strlen(state_str); j < 12; j++)
+            if (task->state == TASK_RUNNING)
             {
-                terminal_putchar(' ');
+                terminal_writestring("RUNNING\n");
             }
-
-            itoa(tasks[i].cpu_time, buf);
-            terminal_writestring(buf);
-            terminal_putchar('\n');
+            else if (task->state == TASK_SLEEPING)
+            {
+                terminal_writestring("SLEEPING\n");
+            }
         }
     }
+
+    char count_str[12];
+    itoa(task_count_active(), count_str);
+    terminal_writestring("\nTotal active tasks: ");
+    terminal_writestring(count_str);
     terminal_putchar('\n');
 }
 
 void cmd_process_create(parsed_command_t *cmd)
 {
-    if (cmd->arg_count == 0)
+    const char *task_name = cmd->args[0];
+    ;
+    if (!task_name || strlen(task_name) == 0)
     {
-        terminal_writestring("\nUsage: process.create \n");
-        terminal_writestring("Available: counter, spinner, clock\n\n");
+        terminal_writestring("Usage: process.create <name>\n");
+        terminal_writestring("Available tasks: counter, clock, spinner\n");
         return;
     }
 
-    uint32_t task_id = 0;
+    void (*entry_point)(void) = 0;
 
-    if (strcmp(cmd->args[0], "counter") == 0)
+    if (strcmp(task_name, "counter") == 0)
     {
-        task_id = task_create("Counter", task_counter);
+        entry_point = task_counter;
     }
-    else if (strcmp(cmd->args[0], "spinner") == 0)
+    else if (strcmp(task_name, "clock") == 0)
     {
-        task_id = task_create("Spinner", task_spinner);
+        entry_point = task_clock;
     }
-    else if (strcmp(cmd->args[0], "clock") == 0)
+    else if (strcmp(task_name, "spinner") == 0)
     {
-        task_id = task_create("Clock", task_clock);
+        entry_point = task_spinner;
     }
     else
     {
-        terminal_setcolor(vga_entry_color(VGA_RED, VGA_BLACK));
-        terminal_writestring("\nUnknown task type: ");
-        terminal_writestring(cmd->args[0]);
-        terminal_writestring("\n\n");
-        terminal_setcolor(vga_entry_color(VGA_WHITE, VGA_BLACK));
+        terminal_writestring("Unknown task type: ");
+        terminal_writestring(task_name);
+        terminal_putchar('\n');
+        terminal_writestring("Available: counter, clock, spinner\n");
         return;
     }
 
-    if (task_id > 0)
+    uint32_t task_id = task_create(task_name, entry_point);
+    if (task_id == 0)
     {
-        char buf[20];
-        terminal_setcolor(vga_entry_color(VGA_LIGHT_GREEN, VGA_BLACK));
-        terminal_writestring("\nTask created: ");
-        terminal_writestring(cmd->args[0]);
-        terminal_writestring(" (ID: ");
-        itoa(task_id, buf);
-        terminal_writestring(buf);
-        terminal_writestring(")\n\n");
-        terminal_setcolor(vga_entry_color(VGA_WHITE, VGA_BLACK));
+        terminal_writestring("Failed to create task (max tasks reached)\n");
     }
     else
     {
-        terminal_setcolor(vga_entry_color(VGA_RED, VGA_BLACK));
-        terminal_writestring("\nFailed to create task!\n\n");
-        terminal_setcolor(vga_entry_color(VGA_WHITE, VGA_BLACK));
+        terminal_writestring("Created task '");
+        terminal_writestring(task_name);
+        terminal_writestring("' with ID ");
+        char id_str[12];
+        itoa(task_id, id_str);
+        terminal_writestring(id_str);
+        terminal_putchar('\n');
     }
 }
 
 void cmd_process_kill(parsed_command_t *cmd)
 {
-    if (cmd->arg_count == 0)
+    const char *id_str = cmd->args[0];
+    ;
+    if (!id_str || strlen(id_str) == 0)
     {
-        terminal_writestring("\nUsage: process.kill \n\n");
+        terminal_writestring("Usage: process.kill <task_id>\n");
         return;
     }
 
-    uint32_t task_id = atoi(cmd->args[0]);
-
+    uint32_t task_id = atoi(id_str);
     if (task_id == 0)
     {
-        terminal_setcolor(vga_entry_color(VGA_RED, VGA_BLACK));
-        terminal_writestring("\nCannot kill kernel task!\n\n");
-        terminal_setcolor(vga_entry_color(VGA_WHITE, VGA_BLACK));
+        terminal_writestring("Cannot kill kernel task\n");
+        return;
+    }
+
+    task_t *task = task_get_by_id(task_id);
+    if (!task)
+    {
+        terminal_writestring("Task not found: ");
+        terminal_writestring(id_str);
+        terminal_putchar('\n');
         return;
     }
 
     task_kill(task_id);
-
-    terminal_setcolor(vga_entry_color(VGA_LIGHT_GREEN, VGA_BLACK));
-    terminal_writestring("\nTask ");
-    char buf[20];
-    itoa(task_id, buf);
-    terminal_writestring(buf);
-    terminal_writestring(" terminated.\n\n");
-    terminal_setcolor(vga_entry_color(VGA_WHITE, VGA_BLACK));
+    terminal_writestring("Killed task ");
+    terminal_writestring(id_str);
+    terminal_putchar('\n');
 }
 
 void cmd_process_info(parsed_command_t *cmd)
 {
-    (void)cmd;
+    const char *id_str = cmd->args[0];
+    if (!id_str || strlen(id_str) == 0)
+    {
+        terminal_writestring("Usage: process.info <task_id>\n");
+        return;
+    }
 
-    task_t *current = task_get_current();
+    uint32_t task_id = atoi(id_str);
+    task_t *task = task_get_by_id(task_id);
 
-    terminal_setcolor(vga_entry_color(VGA_WHITE, VGA_BLACK));
-    terminal_writestring("\nProcess Information:\n");
-    terminal_writestring("  Current task: ");
-    terminal_writestring(current->name);
-    terminal_writestring(" (ID: ");
-    char buf[20];
-    itoa(current->id, buf);
-    terminal_writestring(buf);
-    terminal_writestring(")\n");
+    if (!task)
+    {
+        terminal_writestring("Task not found\n");
+        return;
+    }
 
-    terminal_writestring("  Total tasks: ");
-    itoa(task_get_count(), buf);
-    terminal_writestring(buf);
-    terminal_writestring("\n");
+    terminal_writestring("Task Information:\n");
+    terminal_writestring("  ID:    ");
+    char id_buf[12];
+    itoa(task->id, id_buf);
+    terminal_writestring(id_buf);
+    terminal_putchar('\n');
 
-    terminal_writestring("  Counter value: ");
-    itoa(get_counter_value(), buf);
-    terminal_writestring(buf);
-    terminal_writestring("\n\n");
+    terminal_writestring("  Name:  ");
+    terminal_writestring(task->name);
+    terminal_putchar('\n');
+
+    terminal_writestring("  State: ");
+    if (task->state == TASK_RUNNING)
+    {
+        terminal_writestring("RUNNING\n");
+    }
+    else if (task->state == TASK_SLEEPING)
+    {
+        terminal_writestring("SLEEPING\n");
+    }
+    else
+    {
+        terminal_writestring("DEAD\n");
+    }
 }
 
 void cmd_help(parsed_command_t *cmd)
@@ -423,10 +438,10 @@ void cmd_help(parsed_command_t *cmd)
     terminal_writestring("  display.clear          - Clear the screen\n");
     terminal_writestring("  display.echo <text>    - Display text\n");
     terminal_writestring("  help.commands          - Show this help\n\n");
-    terminal_writestring("DISPLAY COMMANDS:\n");
-    terminal_writestring("  process.list           - List processes\n\n");
-    terminal_writestring("  process.create <name>  - Create process\n\n");
-    terminal_writestring("  process.kill <id>      - Kill N process\n\n");
+    terminal_writestring("PROCESS COMMANDS:\n");
+    terminal_writestring("  process.list           - List processes\n");
+    terminal_writestring("  process.create <name>  - Create process\n");
+    terminal_writestring("  process.kill <id>      - Kill N process\n");
     terminal_writestring("  process.info           - Process Information\n\n");
 }
 

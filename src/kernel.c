@@ -8,8 +8,8 @@
 #include "string.h"
 #include "lineedit.h"
 #include "vga_cursor.h"
-#include "task.h"
 #include "scheduler.h"
+#include "paging.h"
 
 static uint16_t* terminal_buffer;
 static uint32_t terminal_row;
@@ -139,18 +139,19 @@ void kernel_main(void) {
     memory_init();
     command_init();
     lineedit_init();
-    task_init();
-    scheduler_init();
     commands_register_all();
     
-    terminal_setcolor(vga_entry_color(VGA_LIGHT_GREEN, VGA_BLACK));
-    terminal_writestring("Multitasking enabled! Try 'process.create counter'\n");
-    terminal_setcolor(vga_entry_color(VGA_LIGHT_GREY, VGA_BLACK));
-    terminal_writestring("Type 'help.commands' for available commands.\n\n");
+    terminal_writestring("Initializing scheduler...\n");
+    scheduler_init();
+
+    terminal_writestring("Initializing paging...\n");
+    paging_init();
     
+    terminal_writestring("Type 'help.commands' for available commands\n");
+    terminal_writestring("> ");
+    
+    // Enable scheduling after boot
     scheduler_start();
-    
-    print_prompt();
     
     while (1) {
         if (keyboard_has_special_key()) {

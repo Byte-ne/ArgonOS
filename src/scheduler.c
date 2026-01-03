@@ -1,69 +1,101 @@
 #include "scheduler.h"
 #include "task.h"
-
-extern task_t tasks[];
-extern uint32_t current_task_id;
+#include "timer.h"
+#include "string.h"
+#include "paging.h"
 
 static uint8_t scheduler_enabled = 0;
 
+// External functions from task.c
+extern task_t* task_get_by_index(uint32_t index);
+extern uint32_t task_get_current_index(void);
+extern void task_set_current_index(uint32_t index);
+
 void scheduler_init(void) {
-    scheduler_enabled = 0;
+    task_init();
+    scheduler_enabled = 0;  // Don't start scheduling yet
 }
 
 void scheduler_start(void) {
     scheduler_enabled = 1;
 }
 
-void scheduler_switch_task(task_registers_t* current_regs) {
+// Round-robin scheduler (called by timer interrupt)
+void schedule(registers_t* regs) {
     if (!scheduler_enabled) {
-        return;
+        return;  // Scheduling not started yet
     }
     
-    task_t* current = task_get_current();
-    if (!current) return;
+    // Save current task's registers
+    uint32_t current_idx = task_get_current_index();
+    task_t* current = task_get_by_index(current_idx);
     
-    if (current->state == TASK_RUNNING) {
-        current->state = TASK_READY;
+    if (current && current->state == TASK_RUNNING) {
+        // Save CPU state
+        current->regs.eax = regs->eax;
+        current->regs.ebx = regs->ebx;
+        current->regs.ecx = regs->ecx;
+        current->regs.edx = regs->edx;
+        current->regs.esi = regs->esi;
+        current->regs.edi = regs->edi;
+        current->regs.ebp = regs->ebp;
+        current->regs.esp = regs->esp;
+        current->regs.eip = regs->eip;
+        current->regs.eflags = regs->eflags;
     }
     
-    if (current_regs && current->state != TASK_DEAD) {
-        current->regs = *current_regs;
-    }
-    
-    int next_slot = -1;
-    int current_slot = -1;
-    
-    for (int i = 0; i < MAX_TASKS; i++) {
-        if (tasks[i].id == current_task_id) {
-            current_slot = i;
-            break;
+    // Wake up sleeping tasks
+    uint32_t current_ticks = timer_get_ticks();
+    for (uint32_t i = 0; i < MAX_TASKS; i++) {
+        task_t* t = task_get_by_index(i);
+        if (t && t->state == TASK_SLEEPING) {
+            if (current_ticks >= t->sleep_until) {
+                t->state = TASK_RUNNING;
+            }
         }
     }
     
-    if (current_slot == -1) current_slot = 0;
+    // Find next runnable task (round-robin)
+    uint32_t next_idx = current_idx;
+    uint32_t checked = 0;
     
-    for (int i = 1; i <= MAX_TASKS; i++) {
-        int idx = (current_slot + i) % MAX_TASKS;
-        if (tasks[idx].state == TASK_READY || 
-            (tasks[idx].state == TASK_RUNNING && tasks[idx].id != current_task_id)) {
-            next_slot = idx;
-            break;
-        }
-    }
-    
-    if (next_slot == -1) {
-        if (current->state != TASK_DEAD) {
-            current->state = TASK_RUNNING;
+    do {
+        next_idx = (next_idx + 1) % MAX_TASKS;
+        checked++;
+        
+        task_t* next = task_get_by_index(next_idx);
+        if (next && next->state == TASK_RUNNING && next->id != 0) {
+            // Found a runnable task
+            task_set_current_index(next_idx);
+            
+            // Switch to task's page directory (virtual memory space)
+            if (next->page_directory) {
+                paging_switch_directory(next->page_directory);
+            }
+            
+            // Restore its registers
+            regs->eax = next->regs.eax;
+            regs->ebx = next->regs.ebx;
+            regs->ecx = next->regs.ecx;
+            regs->edx = next->regs.edx;
+            regs->esi = next->regs.esi;
+            regs->edi = next->regs.edi;
+            regs->ebp = next->regs.ebp;
+            regs->esp = next->regs.esp;
+            regs->eip = next->regs.eip;
+            regs->eflags = next->regs.eflags;
+            
             return;
         }
-        next_slot = 0;
-    }
+        
+    } while (checked < MAX_TASKS);
     
-    current_task_id = tasks[next_slot].id;
-    tasks[next_slot].state = TASK_RUNNING;
-    tasks[next_slot].cpu_time++;
+    // No runnable tasks, stay in kernel
+    task_set_current_index(0);
     
-    if (current_regs) {
-        *current_regs = tasks[next_slot].regs;
+    // Switch back to kernel page directory
+    task_t* kernel = task_get_by_index(0);
+    if (kernel && kernel->page_directory) {
+        paging_switch_directory(kernel->page_directory);
     }
 }

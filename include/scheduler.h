@@ -4,8 +4,9 @@
 #include "types.h"
 #include "task.h"
 
+// Scheduler functions
 void scheduler_init(void);
-void scheduler_switch_task(task_registers_t* current_regs);
 void scheduler_start(void);
+void schedule(registers_t* regs);  // Called by timer interrupt
 
 #endif

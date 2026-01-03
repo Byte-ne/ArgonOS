@@ -10,7 +10,7 @@ OBJS = build/boot.o build/kernel.o build/idt.o build/idt_asm.o \
        build/isr.o build/pic.o build/keyboard.o build/timer.o \
        build/string.o build/memory.o build/command.o build/commands.o \
        build/lineedit.o build/vga_cursor.o build/task.o build/scheduler.o \
-       build/task_switch.o build/demo_tasks.o
+       build/task_switch.o build/paging.o build/paging_asm.o
 
 all: build/kernel.bin argon.iso
 
@@ -19,6 +19,14 @@ build/boot.o: src/boot.asm
 	$(AS) $(ASFLAGS) $< -o $@
 
 build/idt_asm.o: src/idt_asm.asm
+	@mkdir -p build
+	$(AS) $(ASFLAGS) $< -o $@
+
+build/task_switch.o: src/task_switch.asm
+	@mkdir -p build
+	$(AS) $(ASFLAGS) $< -o $@
+
+build/paging_asm.o: src/paging_asm.asm
 	@mkdir -p build
 	$(AS) $(ASFLAGS) $< -o $@
 
@@ -78,11 +86,7 @@ build/scheduler.o: src/scheduler.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/task_switch.o: src/task_switch.asm
-	@mkdir -p build
-	$(AS) $(ASFLAGS) $< -o $@
-
-build/demo_tasks.o: src/demo_tasks.c
+build/paging.o: src/paging.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -99,7 +103,7 @@ argon.iso: build/kernel.bin
 	grub-mkrescue -o argon.iso isodir 2>&1 | grep -v "xorriso"
 	@echo "ISO created: argon.iso"
 
-run: build/kernel.bin
+run: argon.iso
 	qemu-system-i386 -kernel build/kernel.bin
 
 run-iso: argon.iso
